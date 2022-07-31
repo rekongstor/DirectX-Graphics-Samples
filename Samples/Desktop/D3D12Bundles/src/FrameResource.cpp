@@ -92,13 +92,15 @@ void FrameResource::PopulateCommandList(ID3D12GraphicsCommandList* pCommandList,
    ID3D12DescriptorHeap* ppHeaps[] = { pCbvSrvDescriptorHeap, pSamplerDescriptorHeap };
    pCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
    pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-#if defined(DEFAULT_VERTEX_INPUT) || defined(INDEXED_VERTEX_INPUT)
+
+#if defined(INDEXED_VERTEX_INPUT) || defined(DEFAULT_VERTEX_INPUT) || 1
    pCommandList->IASetIndexBuffer(pIndexBufferViewDesc);
 #endif
 
-#if defined(DEFAULT_VERTEX_INPUT)
+#if defined(DEFAULT_VERTEX_INPUT) || 1
    pCommandList->IASetVertexBuffers(0, 1, pVertexBufferViewDesc);
 #endif
+
    pCommandList->SetGraphicsRootDescriptorTable(0, pCbvSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
    pCommandList->SetGraphicsRootDescriptorTable(1, pSamplerDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
@@ -108,8 +110,12 @@ void FrameResource::PopulateCommandList(ID3D12GraphicsCommandList* pCommandList,
    CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvHandle(pCbvSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), frameResourceDescriptorOffset, cbvSrvDescriptorSize);
 
 #if defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
-   CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvHandleVertexIndexBuffers(pCbvSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), 1, cbvSrvDescriptorSize);
-   pCommandList->SetGraphicsRootDescriptorTable(3, cbvSrvHandleVertexIndexBuffers);
+   CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvHandleVertexBuffer(pCbvSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), 1, cbvSrvDescriptorSize);
+   pCommandList->SetGraphicsRootDescriptorTable(3, cbvSrvHandleVertexBuffer);
+#if defined(UNINDEXED_VERTEX_INPUT)
+   CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvHandleIndexBuffer(pCbvSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), 2, cbvSrvDescriptorSize);
+   pCommandList->SetGraphicsRootDescriptorTable(4, cbvSrvHandleIndexBuffer);
+#endif
 #endif
 
    PIXBeginEvent(pCommandList, 0, L"Draw cities");

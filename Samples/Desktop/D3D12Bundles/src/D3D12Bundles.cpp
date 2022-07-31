@@ -54,9 +54,14 @@ void D3D12Bundles::LoadPipeline()
    // NOTE: Enabling the debug layer after device creation will invalidate the active device.
    {
       ComPtr<ID3D12Debug> debugController;
+      ComPtr<ID3D12Debug1> debugController1;
+      //VERIFY(D3D12GetDebugInterface(IID_PPV_ARGS(&spDebugController0)));
+      //VERIFY(spDebugController0->QueryInterface(IID_PPV_ARGS(&spDebugController1)));
+      //spDebugController1->SetEnableGPUBasedValidation(true);
       if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
          debugController->EnableDebugLayer();
-
+         debugController->QueryInterface(IID_PPV_ARGS(&debugController1));
+         debugController1->SetEnableGPUBasedValidation(true);
          // Enable additional debug layers.
          dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
       }
@@ -185,13 +190,10 @@ void D3D12Bundles::LoadAssets()
 
 #if defined(DEFAULT_VERTEX_INPUT)
       const UINT rangesCount = 3;
-#elif defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
+#elif defined(INDEXED_VERTEX_INPUT)
       const UINT rangesCount = 4;
-#if defined(INDEXED_VERTEX_INPUT)
-      const UINT numDescriptors = 1;
 #elif defined(UNINDEXED_VERTEX_INPUT)
-      const UINT numDescriptors = 2;
-#endif
+      const UINT rangesCount = 5;
 #endif
 
       CD3DX12_DESCRIPTOR_RANGE1 ranges[rangesCount];
@@ -199,7 +201,10 @@ void D3D12Bundles::LoadAssets()
       ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);
       ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
 #if defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
-      ranges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, numDescriptors, 0, 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+      ranges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+#if defined(UNINDEXED_VERTEX_INPUT)
+      ranges[4].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+#endif
 #endif
 
       CD3DX12_ROOT_PARAMETER1 rootParameters[rangesCount];
@@ -208,6 +213,9 @@ void D3D12Bundles::LoadAssets()
       rootParameters[2].InitAsDescriptorTable(1, &ranges[2], D3D12_SHADER_VISIBILITY_ALL);
 #if defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
       rootParameters[3].InitAsDescriptorTable(1, &ranges[3], D3D12_SHADER_VISIBILITY_VERTEX);
+#if defined(UNINDEXED_VERTEX_INPUT)
+      rootParameters[4].InitAsDescriptorTable(1, &ranges[4], D3D12_SHADER_VISIBILITY_VERTEX);
+#endif
 #endif
 
       CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
@@ -239,9 +247,9 @@ void D3D12Bundles::LoadAssets()
 
       // Describe and create the graphics pipeline state objects (PSO).
       D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-      //#if defined(DEFAULT_VERTEX_INPUT)
+#if defined(DEFAULT_VERTEX_INPUT) || 1
       psoDesc.InputLayout = { SampleAssets::StandardVertexDescription, SampleAssets::StandardVertexDescriptionNumElements };
-      //#endif
+#endif
       psoDesc.pRootSignature = m_rootSignature.Get();
       psoDesc.VS = CD3DX12_SHADER_BYTECODE(pVertexShaderData, vertexShaderDataLength);
       psoDesc.PS = CD3DX12_SHADER_BYTECODE(pPixelShaderData1, pixelShaderDataLength1);
@@ -316,7 +324,11 @@ void D3D12Bundles::LoadAssets()
       vertexData.SlicePitch = vertexData.RowPitch;
 
       UpdateSubresources<1>(m_commandList.Get(), m_vertexBuffer.Get(), vertexBufferUploadHeap.Get(), 0, 0, 1, &vertexData);
+#if defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
+      m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));
+#elif defined(DEFAULT_VERTEX_INPUT)
       m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+#endif
 
       // Initialize the vertex buffer view.
       m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
@@ -352,7 +364,11 @@ void D3D12Bundles::LoadAssets()
       indexData.SlicePitch = indexData.RowPitch;
 
       UpdateSubresources<1>(m_commandList.Get(), m_indexBuffer.Get(), indexBufferUploadHeap.Get(), 0, 0, 1, &indexData);
+#if defined(UNINDEXED_VERTEX_INPUT)
+      m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_indexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));
+#elif defined(DEFAULT_VERTEX_INPUT) || defined(INDEXED_VERTEX_INPUT)
       m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_indexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER));
+#endif
 
       // Describe the index buffer view.
       m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
@@ -370,10 +386,10 @@ void D3D12Bundles::LoadAssets()
       vertexViewDesc.Buffer.StructureByteStride = m_vertexBufferView.StrideInBytes;
       vertexViewDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-      D3D12_SHADER_RESOURCE_VIEW_DESC indexViewDesc = { DXGI_FORMAT_R32_TYPELESS, D3D12_SRV_DIMENSION_BUFFER, D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING };
+      D3D12_SHADER_RESOURCE_VIEW_DESC indexViewDesc = { DXGI_FORMAT_UNKNOWN, D3D12_SRV_DIMENSION_BUFFER, D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING };
       indexViewDesc.Buffer.NumElements = m_indexBufferView.SizeInBytes / sizeof(UINT32);
-      indexViewDesc.Buffer.StructureByteStride = 0;
-      indexViewDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
+      indexViewDesc.Buffer.StructureByteStride = sizeof(UINT32);
+      indexViewDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
       m_device->CreateShaderResourceView(m_vertexBuffer.Get(), &vertexViewDesc, srvVertexBufferHandle);
       srvVertexBufferHandle.Offset(1, m_cbvSrvDescriptorSize);
       m_device->CreateShaderResourceView(m_indexBuffer.Get(), &indexViewDesc, srvVertexBufferHandle);

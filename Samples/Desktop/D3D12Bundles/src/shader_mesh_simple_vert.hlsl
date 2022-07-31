@@ -17,6 +17,11 @@ struct VSInput
    float3 tangent    : TANGENT;
 };
 
+struct Index
+{
+    uint index;
+};
+
 struct PSInput
 {
    float4 position    : SV_POSITION;
@@ -30,7 +35,7 @@ cbuffer cb0 : register(b0)
 
 
 #if defined(UNINDEXED_VERTEX_INPUT)
-StructuredBuffer<uint> indexBuffer : register(t1, space1);
+StructuredBuffer<Index> indexBuffer : register(t1, space1);
 #endif
 
 #if defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
@@ -41,21 +46,23 @@ VSInput GetVertexAttribute(int vertexId)
 #if defined(INDEXED_VERTEX_INPUT)
     return vertexBuffer[vertexId];
 #elif defined(UNINDEXED_VERTEX_INPUT)
-    return vertexBuffer[indexBuffer[vertexId]];
+    return vertexBuffer[indexBuffer[vertexId].index];
 #endif
 };
 #endif
 
 PSInput VSMain(
-#if defined(DEFAULT_VERTEX_INPUT)
-VSInput input
-#elif defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
-uint vertexId : SV_VertexID
+//#if defined(DEFAULT_VERTEX_INPUT)
+VSInput input_
+#if defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
+, uint vertexId : SV_VertexID
 #endif
 )
 {
 #if defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
     VSInput input = GetVertexAttribute(vertexId);
+#elif defined(DEFAULT_VERTEX_INPUT)
+    VSInput input = input_;
 #endif
     
    PSInput result;

@@ -39,7 +39,7 @@ public:
 
 private:
    static const UINT FrameCount = 3;
-   static const UINT CityRowCount = 4000;
+   static const UINT CityRowCount = 2000;
    static const UINT CityColumnCount = 3;
    static const bool UseBundles = true;
 
