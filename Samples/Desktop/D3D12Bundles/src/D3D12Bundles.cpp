@@ -534,18 +534,26 @@ void D3D12Bundles::OnUpdate()
    getTimings(m_commandQueue.Get(), &timings, &gpuTicksPerMicrosecond);
    gpuTicksPerMicrosecond /= 1000000;
 
-   static float timingAveraged = 0.f;
-   const UINT measurementsCount = 200;
+   static float timingAccumulator = 0.f;
+   static float timingWeightedAverage = 0.f;
+   const float weightedAverageMultiplier = 0.2f;
+   const UINT measurementsCount = 50;
 
-   timingAveraged += (float)timings.timestamps[0].ticks;
+   timingAccumulator += (float)timings.timestamps[0].ticks;
    if (m_frameCounter == measurementsCount) {
-      timingAveraged /= (float)measurementsCount;
+      timingAccumulator /= (float)measurementsCount;
+
+      if (timingWeightedAverage < 0.1f) { // first count
+         timingWeightedAverage = timingAccumulator;
+      } else {
+         timingWeightedAverage = timingWeightedAverage * (1.f - weightedAverageMultiplier) + timingAccumulator * weightedAverageMultiplier;
+      }
       // Update window text with FPS value.
       wchar_t fps[64];
-      swprintf_s(fps, L"%ufps %f us", m_timer.GetFramesPerSecond(), (timingAveraged / ((float)gpuTicksPerMicrosecond)));
+      swprintf_s(fps, L"%ufps %f us (%f us average)", m_timer.GetFramesPerSecond(), timingAccumulator / ((float)gpuTicksPerMicrosecond), timingWeightedAverage / ((float)gpuTicksPerMicrosecond));
       SetCustomWindowText(fps);
       m_frameCounter = 0;
-      timingAveraged = 0.f;
+      timingAccumulator = 0.f;
    }
 
    m_camera.Update(static_cast<float>(m_timer.GetElapsedSeconds()));
