@@ -12,6 +12,16 @@
 #include "stdafx.h"
 #include "D3D12Bundles.h"
 #include "occcity.h"
+#include "cacao.h"
+
+static GpuTimer timer;
+
+
+void getTimings(ID3D12CommandQueue* commandQueue, FfxCacaoDetailedTiming* timings, uint64_t* gpuTicksPerSecond)
+{
+   gpuTimerCollectTimings(&timer, timings);
+   commandQueue->GetTimestampFrequency(gpuTicksPerSecond);
+}
 
 D3D12Bundles::D3D12Bundles(UINT width, UINT height, std::wstring name) :
    DXSample(width, height, name),
@@ -502,14 +512,6 @@ void D3D12Bundles::OnUpdate()
 {
    m_timer.Tick(NULL);
 
-   if (m_frameCounter == 500) {
-      // Update window text with FPS value.
-      wchar_t fps[64];
-      swprintf_s(fps, L"%ufps", m_timer.GetFramesPerSecond());
-      SetCustomWindowText(fps);
-      m_frameCounter = 0;
-   }
-
    m_frameCounter++;
 
    // Get current GPU progress against submitted workload. Resources still scheduled 
@@ -525,6 +527,25 @@ void D3D12Bundles::OnUpdate()
    if (m_pCurrentFrameResource->m_fenceValue != 0 && m_pCurrentFrameResource->m_fenceValue > lastCompletedFence) {
       ThrowIfFailed(m_fence->SetEventOnCompletion(m_pCurrentFrameResource->m_fenceValue, m_fenceEvent));
       WaitForSingleObject(m_fenceEvent, INFINITE);
+   }
+
+   FfxCacaoDetailedTiming timings;
+   uint64_t gpuTicksPerMicrosecond;
+   getTimings(m_commandQueue.Get(), &timings, &gpuTicksPerMicrosecond);
+   gpuTicksPerMicrosecond /= 1000000;
+
+   static float timingAveraged = 0.f;
+   const UINT measurementsCount = 200;
+
+   timingAveraged += (float)timings.timestamps[0].ticks;
+   if (m_frameCounter == measurementsCount) {
+      timingAveraged /= (float)measurementsCount;
+      // Update window text with FPS value.
+      wchar_t fps[64];
+      swprintf_s(fps, L"%ufps %f us", m_timer.GetFramesPerSecond(), (timingAveraged / ((float)gpuTicksPerMicrosecond)));
+      SetCustomWindowText(fps);
+      m_frameCounter = 0;
+      timingAveraged = 0.f;
    }
 
    m_camera.Update(static_cast<float>(m_timer.GetElapsedSeconds()));
@@ -615,6 +636,8 @@ void D3D12Bundles::CreateFrameResources()
 
       m_frameResources.push_back(pFrameResource);
    }
+
+   gpuTimerInit(&timer, m_device.Get(), FrameCount);
 }
 
 void D3D12Bundles::PopulateCommandList(FrameResource* pFrameResource)
@@ -628,6 +651,9 @@ void D3D12Bundles::PopulateCommandList(FrameResource* pFrameResource)
    // list, that command list can then be reset at any time and must be before
    // re-recording.
    ThrowIfFailed(m_commandList->Reset(m_pCurrentFrameResource->m_commandAllocator.Get(), m_pipelineState1.Get()));
+
+   gpuTimerStartFrame(&timer);
+   GET_TIMESTAMP(&timer, m_commandList.Get(), "Begin frame");
 
    // Set necessary state.
    m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
@@ -659,8 +685,11 @@ void D3D12Bundles::PopulateCommandList(FrameResource* pFrameResource)
          &m_vertexBufferView, m_cbvSrvHeap.Get(), m_cbvSrvDescriptorSize, m_samplerHeap.Get(), m_rootSignature.Get());
    }
 
+   GET_TIMESTAMP(&timer, m_commandList.Get(), "Drawing");
    // Indicate that the back buffer will now be used to present.
    m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+
+   gpuTimerEndFrame(&timer, m_commandList.Get());
 
    ThrowIfFailed(m_commandList->Close());
 }
