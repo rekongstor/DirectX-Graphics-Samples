@@ -11,29 +11,57 @@
 
 struct VSInput
 {
-    float3 position    : POSITION;
-    float3 normal    : NORMAL;
-    float2 uv        : TEXCOORD0;
-    float3 tangent    : TANGENT;
+   float3 position    : POSITION;
+   float3 normal    : NORMAL;
+   float2 uv        : TEXCOORD0;
+   float3 tangent    : TANGENT;
 };
 
 struct PSInput
 {
-    float4 position    : SV_POSITION;
-    float2 uv        : TEXCOORD0;
+   float4 position    : SV_POSITION;
+   float2 uv        : TEXCOORD0;
 };
 
 cbuffer cb0 : register(b0)
 {
-    float4x4 g_mWorldViewProj;
+   float4x4 g_mWorldViewProj;
 };
 
-PSInput VSMain(VSInput input)
+
+#if defined(UNINDEXED_VERTEX_INPUT)
+StructuredBuffer<uint> indexBuffer : register(t1, space1);
+#endif
+
+#if defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
+StructuredBuffer<VSInput> vertexBuffer : register(t0, space1);
+
+VSInput GetVertexAttribute(int vertexId)
 {
-    PSInput result;
+#if defined(INDEXED_VERTEX_INPUT)
+    return vertexBuffer[vertexId];
+#elif defined(UNINDEXED_VERTEX_INPUT)
+    return vertexBuffer[indexBuffer[vertexId]];
+#endif
+};
+#endif
+
+PSInput VSMain(
+#if defined(DEFAULT_VERTEX_INPUT)
+VSInput input
+#elif defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
+uint vertexId : SV_VertexID
+#endif
+)
+{
+#if defined(INDEXED_VERTEX_INPUT) || defined(UNINDEXED_VERTEX_INPUT)
+    VSInput input = GetVertexAttribute(vertexId);
+#endif
     
-    result.position = mul(float4(input.position, 1.0f), g_mWorldViewProj);
-    result.uv = input.uv;
-    
-    return result;
+   PSInput result;
+
+   result.position = mul(float4(input.position, 1.0f), g_mWorldViewProj);
+   result.uv = input.uv;
+
+   return result;
 }
